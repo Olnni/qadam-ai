@@ -274,6 +274,10 @@ function renderFinds(pid, sess, an, ev) {
   if (ev.hip !== "better") out.push(["idea", t("f_suggest_none")]);
   const cmp = compareHints(pid);
   if (cmp) out.push(["idea", cmp]);
+  // Отклонение от нормы не бывает меньше нуля. Если ИИ выдал < 0 — запись слишком
+  // отличается от лабораторных, на которых училась модель: предупреждаем врача.
+  const ood = TARGETS.filter((tg) => (an.pelvis || tg !== "GVS_aSagP") && Math.min(ev.res[tg].b[0], ev.res[tg].a[0]) < 0);
+  if (ood.length) out.unshift(["bad", t("f_ood", { list: ood.map((tg) => t("m_" + tg)).join("; ") })]);
   if (!an.pelvis) out.push(["note", t("f_nopelvis")]);
   if (sess.source === "video") out.push(["note", t("video_exp_short")]);
   out.push(["note", t("f_lowacc")]);
@@ -685,8 +689,15 @@ async function runWizard() {
         if (res.fullDuration > res.duration + 0.5) log(t("lg_cut", { s: res.duration.toFixed(0) }), "warn");
         const ang = QPose.anglesFromLandmarks(res.frames, { width: res.width, height: res.height });
         log(t("lg_pose", { found: ang.valid, n: res.frames.length, side: t("side_" + ang.side) }));
-        const sig = QPose.toSignal(ang, QGait.fillGaps);
-        const seg = QGait.segment(sig, {});
+        if (ang.validShare < 0.6) QPose.toSignal(ang, QGait.fillGaps); // понятная ошибка «мало кадров с позой»
+        // Человек может несколько раз пройти через кадр — шаги ищем в каждом проходе отдельно
+        const passes = QPose.splitPasses(res.frames);
+        const sigs = [];
+        for (const pf of passes) {
+          try { sigs.push(QPose.toSignal(QPose.anglesFromLandmarks(pf, { width: res.width, height: res.height, side: ang.side }), QGait.fillGaps)); } catch (e) { /* проход без уверенной позы пропускаем */ }
+        }
+        if (passes.length > 1) log(t("lg_passes", { n: passes.length, u: sigs.length }));
+        const seg = sigs.length > 1 ? QGait.segmentPasses(sigs, {}) : QGait.segment(QPose.toSignal(ang, QGait.fillGaps), {});
         log(t("lg_steps", { n: seg.steps.length, d: seg.dropped, T: seg.period.toFixed(2) }));
         recs[which] = { steps: seg.steps, pelvis: false, trunk: seg.trunk.map(r1), trace: seg.trace, info: { file: f.name, nFrames: res.frames.length, posed: ang.valid, nSteps: seg.steps.length, dropped: seg.dropped, side: ang.side } };
         live[which] = { url: res.url, frames: res.frames, side: ang.side, width: res.width, height: res.height, fps: res.fps };

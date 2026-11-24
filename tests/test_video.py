@@ -7,6 +7,7 @@
                                                результат или ошибка понятны (без сбоев).
   python tests/test_video.py walk.mp4        — ваше видео (сбоку, 10–20 шагов): прогоняется
   python tests/test_video.py before.mp4 after.mp4   весь путь, сохраняется скриншот со скелетом.
+  Видео с iPhone (.MOV, HEVC): добавьте --chrome, чтобы открыть их в Google Chrome.
 
 Нужен интернет (модель MediaPipe грузится с CDN).
 ВАЖНО: тест проверяет, что программа работает. Точность углов по видео он НЕ проверяет —
@@ -17,7 +18,11 @@ from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "tests", "screens"); os.makedirs(OUT, exist_ok=True)
-videos = sys.argv[1:3]
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+videos = args[0:2]
+# Видео с iPhone (HEVC/H.265) тестовый Chromium не открывает — используйте --chrome (ваш Google Chrome)
+CHANNEL = "chrome" if "--chrome" in sys.argv else ("msedge" if "--edge" in sys.argv else None)
+SHOT = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--shot=")), "video_result.png")
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -47,10 +52,10 @@ MAKE_VIDEO = """async () => {
 }"""
 
 with sync_playwright() as pw:
-    br = pw.chromium.launch(args=["--autoplay-policy=no-user-gesture-required"])
+    br = pw.chromium.launch(channel=CHANNEL, args=["--autoplay-policy=no-user-gesture-required"])
     page = br.new_page(viewport={"width": 1366, "height": 900})
     errors = []
-    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.on("pageerror", lambda e: errors.append(e.stack or str(e)))
     page.goto(URL); page.wait_for_selector("#plist li")
     page.click("#btnNewPatient"); page.fill("#cCode", "VIDEO-TEST"); page.click("#btnCardSave")
     page.click('label.src:has(input[value="video"])')
@@ -72,8 +77,16 @@ with sync_playwright() as pw:
     print("\nMediaPipe загрузился:", "да" if loaded else "НЕТ")
     if err: print("Сообщение для пользователя:", err)
     if page.is_visible("#result"):
-        page.screenshot(path=os.path.join(OUT, "video_result.png"), full_page=True)
-        print("Результат:", page.inner_text("#light"), "| скриншот: tests/screens/video_result.png")
+        page.wait_for_timeout(1500)
+        page.screenshot(path=os.path.join(OUT, SHOT), full_page=True)
+        print("Светофор:", page.inner_text("#light"))
+        print("\nТаблица (до → после):")
+        for row in page.locator("#numTbl tr").all()[1:]:
+            c = row.locator("td").all_inner_texts()
+            print(f"   {c[0].splitlines()[0]:42s} {c[2]:>12s} → {c[3]:>12s}   {c[4]}  ({c[5]})")
+        print("\nВыводы ИИ:")
+        for li in page.locator("#finds li").all_inner_texts(): print("   •", li.replace("\n", " "))
+        print("\nСкриншот: tests/screens/" + SHOT)
     print("Ошибки JavaScript:", errors or "нет")
     ok = loaded and not errors and (bool(err) or page.is_visible("#result"))
     print("\nИТОГ:", "ПРОГРАММА ОТРАБОТАЛА КОРРЕКТНО" if ok else "ЕСТЬ ПРОБЛЕМЫ")

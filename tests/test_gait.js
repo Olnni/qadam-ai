@@ -129,6 +129,24 @@ const V = run("В) Видео-путь целиком: точки скелета
 });
 check("найдено ≥ 90% шагов", V.nOut >= 0.9 * V.nIn, `${V.nOut}/${V.nIn}`);
 check("медианная ошибка начала шага ≤ 5%", pct(V.startErr, 0.5) <= 5);
+// ---------- Г. Видео, где человек несколько раз проходит через кадр ----------
+console.log("\nГ) Видео из нескольких проходов (человек исчезает на 0.7 с и появляется снова):");
+{
+  const steps = D.patients.s61520_16.rec.Baseline.slice(0, 20);
+  const rec = S.continuous(steps, { hz: 200, seed: 7, noise: 0 });
+  const fr = S.landmarkFrames(rec, { fps: 30, px: 1, seed: 7 });
+  // вырезаем 3 «паузы» по 0.7 с: человека нет в кадре
+  const T = fr[fr.length - 1].t;
+  fr.forEach((f) => { [0.25, 0.5, 0.75].forEach((q) => { if (Math.abs(f.t - q * T) < 0.35) f.lm = null; }); });
+  const passes = Pz.splitPasses(fr);
+  const sigs = passes.map((p) => Pz.toSignal(Pz.anglesFromLandmarks(p, { width: 640, height: 480 }), G.fillGaps));
+  const seg = G.segmentPasses(sigs, {});
+  const { startErr } = compare(seg, rec, steps);
+  check("найдены 4 прохода", passes.length === 4, passes.length);
+  check("шаги найдены внутри проходов, ошибка начала ≤ 5%", seg.steps.length >= 8 && pct(startErr, 0.5) <= 5,
+    `шагов ${seg.steps.length} из ${steps.length}, медианная ошибка ${pct(startErr, 0.5).toFixed(1)}%`);
+}
+
 console.log("\n  Важно: это проверка ПРОГРАММЫ на идеальных синтетических точках. Точность MediaPipe на");
 console.log("  настоящем видео детей с ДЦП и сравнение с лабораторией этим тестом НЕ проверяются.");
 console.log("\nИТОГ:", ok ? "ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ" : "ЕСТЬ ОШИБКИ");

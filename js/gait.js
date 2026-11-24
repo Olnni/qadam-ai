@@ -151,7 +151,8 @@
     const footPeakPct = opts.footPeakPct ?? 98;
     const t = sig.t, n0 = t.length;
     const T0 = t[0], dur = t[n0 - 1] - T0;
-    if (!(dur >= 3)) throw err("err_short", { s: Number.isFinite(dur) ? dur.toFixed(1) : "?" });
+    const minDur = opts.minDur ?? 3, minSteps = opts.minSteps ?? 3;
+    if (!(dur >= minDur)) throw err("err_short", { s: Number.isFinite(dur) ? dur.toFixed(1) : "?" });
     const n = Math.floor(dur * FS) + 1;
     const R = {};
     for (const k of ["hip", "knee", "ankle", "pelvis", "trunk", "foot"]) if (sig[k]) R[k] = resample(t, sig[k], T0, n);
@@ -173,7 +174,7 @@
     for (let k = 0; k + 1 < pk.length; k++) hs.push((pk[k] + f * (pk[k + 1] - pk[k])) / FS);
     const cycles = [];
     for (let k = 0; k + 1 < hs.length; k++) cycles.push({ start: hs[k], end: hs[k + 1], d: hs[k + 1] - hs[k] });
-    if (cycles.length < 3) throw err("err_few_steps", { n: cycles.length });
+    if (cycles.length < minSteps) throw err("err_few_steps", { n: cycles.length });
     const med = median(cycles.map((c) => c.d));
     const tg = Array.from({ length: n }, (_, i) => i / FS);
     const steps = [];
@@ -186,7 +187,7 @@
       steps.push([].concat(P, at(R.hip), at(R.knee), at(R.ankle)));
       if (R.trunk) (c.trunk = at(R.trunk));
     }
-    if (steps.length < 3) throw err("err_few_steps", { n: steps.length });
+    if (steps.length < minSteps) throw err("err_few_steps", { n: steps.length });
     const trunkCycles = cycles.filter((c) => c.kept && c.trunk).map((c) => c.trunk);
     return {
       steps, cycles, dropped, period, method,
@@ -197,7 +198,34 @@
     };
   }
 
-  const api = { parseSensorCSV, segment, interp, smooth, estimatePeriod, fillGaps, FS };
+  // Видео, где человек несколько раз проходит через кадр: шаги ищем внутри каждого
+  // прохода отдельно (на стыке проходов ритм шага рвётся), потом объединяем.
+  function segmentPasses(sigs, opts = {}) {
+    const parts = [];
+    let firstErr = null;
+    for (const sig of sigs) {
+      try { parts.push(segment(sig, Object.assign({ minDur: 1.5, minSteps: 1 }, opts))); }
+      catch (e) { firstErr = firstErr || e; }
+    }
+    const n = parts.reduce((a, p) => a + p.steps.length, 0);
+    if (!parts.length && firstErr && firstErr.code !== "err_short" && firstErr.code !== "err_few_steps") throw firstErr;
+    if (n < 3) throw err("err_few_steps", { n });
+    const trunks = parts.filter((p) => p.trunk);
+    const trunk = trunks.length ? trunks[0].trunk.map((_, i) => trunks.reduce((a, p) => a + p.trunk[i] * p.steps.length, 0) / trunks.reduce((a, p) => a + p.steps.length, 0)) : null;
+    return {
+      steps: [].concat(...parts.map((p) => p.steps)),
+      // время шагов — от начала всего видео, а не от начала прохода
+      cycles: [].concat(...parts.map((p) => p.cycles.map((c) => Object.assign({}, c, { start: c.start + p.trace.T0, end: c.end + p.trace.T0 })))),
+      dropped: parts.reduce((a, p) => a + p.dropped, 0),
+      period: median(parts.map((p) => p.period)),
+      method: parts[0].method, pelvis: parts.every((p) => p.pelvis), trunk,
+      nFrames: parts.reduce((a, p) => a + p.nFrames, 0),
+      passes: sigs.length, passesUsed: parts.length,
+      trace: { t: [].concat(...parts.map((p) => p.trace.t)), hip: [].concat(...parts.map((p) => p.trace.hip)), hs: [].concat(...parts.map((p) => p.trace.hs)), T0: parts[0].trace.T0 },
+    };
+  }
+
+  const api = { parseSensorCSV, segment, segmentPasses, interp, smooth, estimatePeriod, fillGaps, FS };
   root.QGait = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

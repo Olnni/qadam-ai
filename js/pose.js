@@ -65,6 +65,22 @@
     return out;
   }
 
+  // Делим видео на «проходы»: человек прошёл через кадр, исчез и появился снова.
+  // Новый проход — если человека не было видно дольше maxGap секунд или таз
+  // скачком переместился больше чем на jump ширины кадра.
+  function splitPasses(frames, opts = {}) {
+    const maxGap = opts.maxGap ?? 0.4, jump = opts.jump ?? 0.25, minLen = opts.minLen ?? 1.5;
+    const out = [];
+    let cur = null, lastX = 0, lastT = 0;
+    frames.forEach((f, i) => {
+      if (!f.lm) return;
+      const x = (f.lm[23].x + f.lm[24].x) / 2;
+      if (!cur || f.t - lastT > maxGap || Math.abs(x - lastX) > jump) { cur = [i, i]; out.push(cur); }
+      cur[1] = i; lastX = x; lastT = f.t;
+    });
+    return out.filter(([a, b]) => frames[b].t - frames[a].t >= minLen).map(([a, b]) => frames.slice(a, b + 1));
+  }
+
   // Сглаживание фильтром Савицкого–Голея (окно 7, полином 2) после заполнения пропусков
   const SG7 = [-2, 3, 6, 7, 6, 3, -2].map((v) => v / 21);
   function savgol(a) {
@@ -82,6 +98,9 @@
 
   /* ---------- Браузер: MediaPipe ---------- */
   let landmarkerPromise = null;
+  // MediaPipe в режиме VIDEO требует, чтобы время кадров только росло —
+  // даже между разными видео. Поэтому каждое следующее видео продолжает отсчёт.
+  let tsBase = 0;
   function loadLandmarker() {
     if (landmarkerPromise) return landmarkerPromise;
     landmarkerPromise = (async () => {
@@ -118,13 +137,15 @@
     for (let i = 0; i < total; i++) {
       const t = 0.01 + i / fps;
       await seek(t);
-      const r = lmk.detectForVideo(video, Math.round(t * 1000));
+      const ts = tsBase + Math.round(t * 1000);
+      const r = lmk.detectForVideo(video, ts);
       const lm = r.landmarks && r.landmarks[0] ? r.landmarks[0].map((p) => ({ x: p.x, y: p.y, visibility: p.visibility })) : null;
       if (lm) found++;
       frames.push({ t, lm });
       if (ctx && i % 3 === 0) { ctx.drawImage(video, 0, 0); if (lm) drawSkeleton(ctx, lm, canvas.width, canvas.height, null); }
       if (onProgress && (i % 5 === 0 || i === total - 1)) { onProgress(i + 1, total, found); await new Promise((r2) => setTimeout(r2, 0)); }
     }
+    tsBase += Math.round(dur * 1000) + 1000;
     return { frames, width: video.videoWidth, height: video.videoHeight, url, duration: dur, fullDuration: video.duration, fps };
   }
 
@@ -145,7 +166,7 @@
     }
   }
 
-  const api = { IDX, chooseSide, anglesFromLandmarks, savgol, toSignal, loadLandmarker, processVideo, drawSkeleton, MODEL_URL, CDN };
+  const api = { IDX, chooseSide, splitPasses, anglesFromLandmarks, savgol, toSignal, loadLandmarker, processVideo, drawSkeleton, MODEL_URL, CDN };
   root.QPose = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

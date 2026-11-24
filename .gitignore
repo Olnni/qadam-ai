@@ -2,3 +2,9 @@ tests/screens/
 __pycache__/
 *.pyc
 .claude/
+
+# видео с людьми не публикуем
+*.MOV
+*.mov
+*.mp4
+*.webm
