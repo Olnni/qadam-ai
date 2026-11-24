@@ -1,0 +1,4 @@
+tests/screens/
+__pycache__/
+*.pyc
+.claude/

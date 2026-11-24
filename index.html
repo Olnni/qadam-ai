@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Qadam AI</title>
+  <meta name="description" content="Qadam AI — анализ походки до и после подсказки для врача-реабилитолога">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="logo" href="#patients"><span class="mark">Q</span><span class="word">Qadam</span><b>AI</b></a>
+  <nav>
+    <a href="#patients" data-view="patients" data-i18n="nav_patients"></a>
+    <a href="#model" data-view="model" data-i18n="nav_model"></a>
+  </nav>
+  <div class="lang"><button data-lang="kk">ҚАЗ</button><button data-lang="ru">РУС</button></div>
+</header>
+<div class="disclaimer" data-i18n="disclaimer"></div>
+
+<!-- ================= Пациенты ================= -->
+<div class="app" id="view-patients">
+  <aside class="side">
+    <button class="btn primary full" id="btnNewPatient" data-i18n="btn_new_patient"></button>
+    <input type="search" id="search" data-i18n-ph="search_ph">
+    <div class="side-head"><h2 data-i18n="my_patients"></h2></div>
+    <ul class="plist" id="myList"></ul>
+    <div class="side-head"><h2 data-i18n="demo_patients"></h2><span class="warn-pill" id="warnCount"></span></div>
+    <ul class="plist" id="plist"></ul>
+    <p class="small muted" data-i18n="legend_list"></p>
+  </aside>
+
+  <main class="main">
+    <div class="phead">
+      <div>
+        <h1 id="pTitle"></h1>
+        <p class="muted" id="pInfo"></p>
+      </div>
+      <div class="row tight" id="pActions">
+        <button class="btn" id="btnCard" data-i18n="btn_card"></button>
+        <button class="btn primary" id="btnNewRec" data-i18n="btn_new_rec"></button>
+      </div>
+    </div>
+    <div class="sessions" id="sessions"></div>
+
+    <!-- Карточка пациента -->
+    <section class="card hidden" id="cardPanel">
+      <h3 data-i18n="card_title"></h3>
+      <p class="small muted" data-i18n="card_privacy"></p>
+      <div class="form-grid">
+        <label><span data-i18n="f_code"></span><input type="text" id="cCode" maxlength="24" autocomplete="off" data-i18n-ph="f_code_ph"></label>
+        <label><span data-i18n="f_age"></span><input type="number" id="cAge" min="1" max="25" step="1"></label>
+        <label><span data-i18n="f_weight"></span><input type="number" id="cWeight" min="5" max="150" step="0.1"></label>
+        <label><span data-i18n="f_height"></span><input type="number" id="cHeight" min="0.5" max="2.2" step="0.01"></label>
+        <label><span data-i18n="f_leg"></span><input type="number" id="cLeg" min="0.2" max="1.2" step="0.01"></label>
+        <label><span data-i18n="f_side"></span>
+          <select id="cSide"><option value="LEFT" data-i18n="side_LEFT"></option><option value="RIGHT" data-i18n="side_RIGHT"></option></select></label>
+      </div>
+      <label class="full"><span data-i18n="f_notes"></span><textarea id="cNotes" rows="2"></textarea></label>
+      <div class="row">
+        <button class="btn primary" id="btnCardSave" data-i18n="btn_save"></button>
+        <button class="btn" id="btnCardCancel" data-i18n="btn_cancel"></button>
+        <button class="btn danger" id="btnCardDelete" data-i18n="btn_delete"></button>
+      </div>
+      <p class="err" id="errCard"></p>
+      <div class="row io">
+        <button class="btn" id="btnExport" data-i18n="btn_export"></button>
+        <label class="btn filebtn"><span data-i18n="btn_import"></span><input type="file" id="fileImport" accept=".json,application/json"></label>
+        <span class="small muted" id="ioMsg"></span>
+      </div>
+    </section>
+
+    <!-- Мастер «Новая запись» -->
+    <section class="card hidden" id="wizard">
+      <h3 data-i18n="wz_title"></h3>
+      <ol class="wsteps">
+        <li>
+          <h4 data-i18n="wz_s1"></h4>
+          <div class="sources" id="sources">
+            <label class="src"><input type="radio" name="src" value="video"><b data-i18n="src_video"></b><span class="small muted" data-i18n="src_video_d"></span><span class="badge exp" data-i18n="badge_exp"></span></label>
+            <label class="src"><input type="radio" name="src" value="imu"><b data-i18n="src_imu"></b><span class="small muted" data-i18n="src_imu_d"></span><span class="badge exp" data-i18n="badge_exp"></span></label>
+            <label class="src"><input type="radio" name="src" value="lab"><b data-i18n="src_lab"></b><span class="small muted" data-i18n="src_lab_d"></span><span class="badge ok" data-i18n="badge_checked"></span></label>
+            <label class="src"><input type="radio" name="src" value="demo"><b data-i18n="src_demo"></b><span class="small muted" data-i18n="src_demo_d"></span><span class="badge ok" data-i18n="badge_checked"></span></label>
+          </div>
+          <p class="small srchelp" id="srcHelp"></p>
+        </li>
+        <li>
+          <h4 data-i18n="wz_s2"></h4>
+          <div class="win" id="inBefore"></div>
+        </li>
+        <li>
+          <h4 data-i18n="wz_s3"></h4>
+          <div class="row">
+            <label><span data-i18n="hint_type"></span>
+              <select id="hintSel">
+                <option value="Verbal" data-i18n="cond_Verbal"></option>
+                <option value="VR" data-i18n="cond_VR"></option>
+                <option value="other" data-i18n="cond_other"></option>
+              </select></label>
+            <label class="grow"><span data-i18n="hint_text"></span><input type="text" id="hintText" maxlength="120" data-i18n-ph="hint_text_ph"></label>
+          </div>
+        </li>
+        <li>
+          <h4 data-i18n="wz_s4"></h4>
+          <div class="win" id="inAfter"></div>
+        </li>
+        <li>
+          <h4 data-i18n="wz_s5"></h4>
+          <div class="row">
+            <button class="btn primary" id="btnRun" data-i18n="btn_analyze"></button>
+            <button class="btn" id="btnWzCancel" data-i18n="btn_cancel"></button>
+          </div>
+          <div class="progress hidden" id="runBar"><i></i></div>
+          <canvas class="preview hidden" id="runPreview"></canvas>
+          <ul class="runlog" id="runLog"></ul>
+          <p class="err" id="errRun"></p>
+        </li>
+      </ol>
+    </section>
+
+    <div id="empty" class="card empty hidden"><p data-i18n="empty_text"></p></div>
+
+    <!-- Результат -->
+    <div id="result" class="hidden">
+      <div class="airun">
+        <span class="pulse"></span>
+        <div><b id="aiRun"></b><span class="small muted" id="aiRunSub"></span></div>
+      </div>
+      <div class="light" id="light"></div>
+
+      <section class="card hidden" id="srcPanel">
+        <h3 id="srcTitle"></h3>
+        <div class="vidpair" id="vidPair"></div>
+        <div class="traces" id="traces"></div>
+        <p class="small muted" id="srcNote"></p>
+      </section>
+
+      <div class="grid wide-left">
+        <section class="card">
+          <h3 data-i18n="anim_title"></h3>
+          <svg id="anim" viewBox="0 0 680 320" role="img" aria-label="gait animation"></svg>
+          <div class="anim-ctrl">
+            <button class="btn" id="btnPlay"></button>
+            <label class="inline small"><span data-i18n="speed"></span><input type="range" id="speed" min="1" max="4" value="2"></label>
+            <span class="legend"><i class="dot red"></i><span data-i18n="legend_worse"></span><i class="dot green"></i><span data-i18n="legend_better"></span></span>
+          </div>
+          <p class="small muted" id="animNote"></p>
+        </section>
+        <section class="card">
+          <h3 data-i18n="find_title"></h3>
+          <ul class="finds" id="finds"></ul>
+        </section>
+      </div>
+
+      <section class="card">
+        <h3 data-i18n="tbl_title"></h3>
+        <p class="small muted" data-i18n="tbl_sub"></p>
+        <div class="scroll"><table class="tbl" id="numTbl"></table></div>
+        <p class="small muted" data-i18n="tbl_note"></p>
+      </section>
+
+      <section class="card">
+        <h3 data-i18n="charts_title"></h3>
+        <p class="small muted" data-i18n="charts_sub"></p>
+        <div class="charts" id="charts"></div>
+      </section>
+
+      <div class="grid">
+        <section class="card">
+          <h3 data-i18n="dec_title"></h3>
+          <div class="decisions">
+            <label><input type="radio" name="dec" value="dec_keep"><span data-i18n="dec_keep"></span></label>
+            <label><input type="radio" name="dec" value="dec_change"><span data-i18n="dec_change"></span></label>
+            <label><input type="radio" name="dec" value="dec_more"><span data-i18n="dec_more"></span></label>
+          </div>
+          <textarea id="note" rows="3" data-i18n-ph="note_ph"></textarea>
+          <div class="row">
+            <button class="btn primary" id="btnSave" data-i18n="btn_save_dec"></button>
+            <button class="btn" id="btnDownload" data-i18n="btn_download"></button>
+          </div>
+          <p class="small" id="saveMsg"></p>
+          <h4 data-i18n="history"></h4>
+          <ul class="history" id="history"></ul>
+        </section>
+        <section class="card">
+          <h3 data-i18n="parent_title"></h3>
+          <div class="parent" id="parent"></div>
+          <button class="btn" id="btnCopy" data-i18n="btn_copy"></button>
+        </section>
+      </div>
+
+      <section class="card" id="simCard">
+        <h3 data-i18n="sim_title"></h3>
+        <p class="small muted" data-i18n="sim_sub"></p>
+        <div id="sim"></div>
+      </section>
+    </div>
+
+    <!-- Прогресс по сеансам -->
+    <section class="card hidden" id="progress">
+      <h3 data-i18n="prog_title"></h3>
+      <div class="chips" id="progMetric"></div>
+      <div id="progChart"></div>
+      <p class="small muted" data-i18n="prog_note"></p>
+    </section>
+  </main>
+</div>
+
+<!-- ================= Модель ИИ ================= -->
+<div class="page hidden" id="view-model">
+  <h1 data-i18n="md_title"></h1>
+  <p class="lead" data-i18n="md_lead"></p>
+
+  <section class="card">
+    <h3 data-i18n="md_how"></h3>
+    <ol class="how">
+      <li data-i18n="md_h1"></li><li data-i18n="md_h2"></li><li data-i18n="md_h3"></li><li data-i18n="md_h4"></li>
+    </ol>
+    <p class="small muted" data-i18n="md_rules"></p>
+  </section>
+
+  <section class="card">
+    <h3 data-i18n="md_val"></h3>
+    <p class="muted" id="valText"></p>
+    <div class="scroll"><table class="tbl" id="valTbl"></table></div>
+    <h4 data-i18n="md_val_nop"></h4>
+    <p class="small muted" data-i18n="md_val_nop_text"></p>
+    <div class="scroll"><table class="tbl" id="valTblNoP"></table></div>
+  </section>
+
+  <section class="card">
+    <div class="row between">
+      <h3 id="cmpTitle"></h3>
+      <label class="inline small"><span data-i18n="md_pick"></span><select id="mdPatient"></select></label>
+    </div>
+    <div class="scroll"><table class="tbl" id="cmpTbl"></table></div>
+  </section>
+
+  <section class="card">
+    <h3 data-i18n="md_seg"></h3>
+    <p class="small muted" data-i18n="md_seg_text"></p>
+    <button class="btn" id="btnSegCheck" data-i18n="btn_seg_check"></button>
+    <ul class="runlog" id="segOut"></ul>
+  </section>
+
+  <section class="card">
+    <h3 data-i18n="md_cohort"></h3>
+    <div class="scroll"><table class="tbl" id="cohortTbl"></table></div>
+  </section>
+
+  <section class="card">
+    <h3 data-i18n="md_thr"></h3>
+    <p class="small muted" data-i18n="md_thr_text"></p>
+    <label class="setting"><span data-i18n="set_hip"></span><input type="number" id="thHip" step="0.5" min="0" value="2"></label>
+    <label class="setting"><span data-i18n="set_joint"></span><input type="number" id="thJoint" step="0.5" min="0" value="2"></label>
+    <label class="setting"><span data-i18n="set_gps"></span><input type="number" id="thGps" step="0.5" min="0" value="1"></label>
+    <button class="btn" id="btnThReset" data-i18n="btn_th_reset"></button>
+  </section>
+
+  <section class="card">
+    <h3 data-i18n="md_limits"></h3>
+    <ul class="how">
+      <li data-i18n="lim1"></li><li data-i18n="lim2"></li><li data-i18n="lim3"></li><li data-i18n="lim4"></li>
+      <li data-i18n="lim5"></li><li data-i18n="lim6"></li><li data-i18n="lim7"></li><li data-i18n="lim8"></li>
+    </ul>
+  </section>
+</div>
+
+<footer class="foot" data-i18n="footer"></footer>
+
+<script src="data/data.js"></script>
+<script src="i18n.js"></script>
+<script src="js/model.js"></script>
+<script src="js/gait.js"></script>
+<script src="js/pose.js"></script>
+<script src="js/anim.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
