@@ -593,7 +593,10 @@ function renderWizardInputs() {
   const hz = (id) => `<label class="inline small"><span>${t("hz_label")}</span><input type="number" id="${id}" min="10" max="2000" step="1" placeholder="100"></label>`;
   const ex = (f) => `<a class="small" href="examples/${f}" download>${t("example")}: ${f}</a>`;
   let b = "", a = "";
-  if (src === "video") { b = fileIn("fB", "video/*"); a = fileIn("fA", "video/*"); }
+  if (src === "video") {
+    b = fileIn("fB", "video/*,.mov") + ex("video_80_before_crooked_gait.MOV");
+    a = fileIn("fA", "video/*,.mov") + ex("video_81_after_hint_knee_fixed_back_wrong.MOV") + ex("video_82_healthy_gait.MOV");
+  }
   if (src === "imu") { b = fileIn("fB", ".csv,.txt") + hz("hzB") + ex("sensors_before_SYNTHETIC.csv"); a = fileIn("fA", ".csv,.txt") + hz("hzA") + ex("sensors_after_verbal_SYNTHETIC.csv"); }
   if (src === "lab") { b = fileIn("fB", ".csv,.txt") + ex("lab_before_s61520_16.csv"); a = fileIn("fA", ".csv,.txt") + ex("lab_after_verbal_s61520_16.csv"); }
   if (src === "demo") {
