@@ -261,3 +261,14 @@ label.file input { max-width: 100%; }
 .lg.norm { color: #3b8a1e; opacity: .5; font-weight: 700; }
 .charts .full-row { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 1100px) { .twin-grid { grid-template-columns: 1fr; } }
+
+/* Пилюля «N с предупреждениями» переносится под заголовок, а не вылезает за край */
+.side-head { flex-wrap: wrap; row-gap: 4px; }
+.side-head h2 { margin-bottom: 0; }
+.warn-pill { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* Телефон и планшет: панель целиком, у списка демо-пациентов — своя прокрутка (~5 строк) */
+@media (max-width: 820px) {
+  .side { max-height: none; overflow: visible; }
+  #plist { max-height: 232px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+  #myList { max-height: 140px; overflow-y: auto; }
+}

@@ -84,6 +84,15 @@ function analysisOf(pid, s) {
     an = QModel.analyze(s.before.steps, s.after.steps, model, { hint: s.hint, pelvis: pel });
     an.modelName = name;
     an.trunkB = s.before.trunk || null; an.trunkA = s.after.trunk || null;
+    // Видео и датчики: отклонение суставов (GVS) считаем по восстановленной норме,
+    // как в лаборатории: √(среднее (угол − норма)²) — оно не бывает отрицательным.
+    // Модель PCA+Ridge остаётся только для GPS. Таз без измерения — «не измерено».
+    if (s.source === "video" || s.source === "imu") {
+      const g = (steps) => steps.map((x) => QTwin.score([x], NORM.norm, pel).gvs);
+      const gb = g(s.before.steps), ga = g(s.after.steps);
+      JOINTS.forEach((j) => { if (j !== "P" || pel) an.per["GVS_aSag" + j] = { b: gb.map((v) => v[j]), a: ga.map((v) => v[j]) }; });
+      an.normGvs = true;
+    }
   }
   cache.set(key, an);
   return an;
@@ -307,9 +316,11 @@ function renderTable(an, ev) {
   METRICS.forEach((m) => {
     const r = ev.res[m];
     const approx = !an.pelvis && m === "GVS_aSagP";
+    if (approx && an.normGvs) { h += `<tr><td>${t("m_" + m)}</td><td colspan="5" class="muted">${t("not_measured")}</td></tr>`; return; }
+    const byNorm = an.normGvs && m.startsWith("GVS_");
     const cls = approx ? "same" : r.status === "worse" ? "up" : r.status === "better" ? "down" : "same";
-    const tag = m === "aMinSagH" ? `<span class="tag m">${t("tag_measured")}</span>` : approx ? `<span class="tag w">${t("tag_approx")}</span>` : `<span class="tag">${t("tag_ai")}</span>`;
-    const acc = m !== "aMinSagH" ? `<span class="acc ${accLevel(m, an.pelvis)}">${t("acc_short", { lvl: t(accLevel(m, an.pelvis)) })}</span>` : "";
+    const tag = m === "aMinSagH" ? `<span class="tag m">${t("tag_measured")}</span>` : byNorm ? `<span class="tag m">${t("tag_norm")}</span>` : approx ? `<span class="tag w">${t("tag_approx")}</span>` : `<span class="tag">${t("tag_ai")}</span>`;
+    const acc = m !== "aMinSagH" && !byNorm ? `<span class="acc ${accLevel(m, an.pelvis)}">${t("acc_short", { lvl: t(accLevel(m, an.pelvis)) })}</span>` : "";
     h += `<tr><td>${t("m_" + m)}${tag}${acc}</td><td>${strip(an.per[m].b, an.per[m].a)}</td>
       <td>${fmt(r.b[0])} ± ${fmt(r.b[1])}</td><td>${fmt(r.a[0])} ± ${fmt(r.a[1])}</td>
       <td class="${cls}">${sign(r.d)}${approx ? "" : " · " + t("w_" + r.status)}</td><td>${approx ? t("not_in_light") : r.reliable ? t("yes") : t("no_spread")}</td></tr>`;

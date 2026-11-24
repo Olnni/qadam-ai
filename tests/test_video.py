@@ -87,6 +87,7 @@ with sync_playwright() as pw:
         print("\nТаблица (до → после):")
         for row in page.locator("#numTbl tr").all()[1:]:
             c = row.locator("td").all_inner_texts()
+            if len(c) < 6: print(f"   {c[0].splitlines()[0]:42s} {c[-1]}"); continue
             print(f"   {c[0].splitlines()[0]:42s} {c[2]:>12s} → {c[3]:>12s}   {c[4]}  ({c[5]})")
         print("\nВыводы ИИ:")
         for li in page.locator("#finds li").all_inner_texts(): print("   •", li.replace("\n", " "))
