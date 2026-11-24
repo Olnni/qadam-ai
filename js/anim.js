@@ -15,7 +15,7 @@
 
   // c — кривые {P,H,K,A}; trunkMode: "pelvis" (таз измерен, корпус не измерялся),
   // "video" (P = наклон корпуса по видео), "none" (ничего выше бедра не измерено)
-  function figure(c, cx, colors, frame, trunkMode, label) {
+  function figure(c, cx, colors, frame, trunkMode, label, cloud, cloudColor) {
     const i = frame, j = (frame + 25) % 51;
     const a = leg(c, i, cx), b = leg(c, j, cx);
     const hipY = 285 - Math.max(a.ay, a.ty, a.hy, b.ay, b.ty, b.hy);  // самая низкая точка — на «дорожке»
@@ -23,6 +23,11 @@
     const ink = "#102a26", col = (k) => colors[k] || ink;
     const ln = (x1, y1, x2, y2, w, s, o = 1, extra = "") => `<line x1="${X(x1)}" y1="${Y(y1)}" x2="${X(x2)}" y2="${Y(y2)}" stroke="${s}" stroke-width="${w}" stroke-linecap="round" opacity="${o}" ${extra}/>`;
     const dot = (x, y, k, r) => `<circle cx="${X(x)}" cy="${Y(y)}" r="${r}" fill="${col(k)}"/>`;
+    // Облако: нога каждого реального шага в этот же момент (вариабельность шагов)
+    const cl = (cloud || []).map((cc) => {
+      const q = leg(cc, i, cx);
+      return `<polyline points="${X(cx)},${Y(0)} ${X(q.kx)},${Y(q.ky)} ${X(q.ax)},${Y(q.ay)} ${X(q.tx)},${Y(q.ty)}" fill="none" stroke="${cloudColor || "#1d9e75"}" stroke-width="3" stroke-linejoin="round" opacity=".09"/>`;
+    }).join("");
     let top = "";
     if (trunkMode === "video") {
       // Реальный наклон корпуса с видео: сплошная линия до плеча
@@ -36,7 +41,7 @@
         `<circle cx="${X(px)}" cy="${Y(py - 84)}" r="13" fill="none" stroke="#9aa6a3" stroke-width="2" stroke-dasharray="3 4"/>` +
         (trunkMode === "pelvis" ? ln(cx, 0, px, py, 9, col("P")) : "");
     }
-    return ln(cx, 0, b.kx, b.ky, 5, ink, 0.2) + ln(b.kx, b.ky, b.ax, b.ay, 5, ink, 0.2) + ln(b.hx, b.hy, b.tx, b.ty, 4, ink, 0.2) +
+    return cl + ln(cx, 0, b.kx, b.ky, 5, ink, 0.2) + ln(b.kx, b.ky, b.ax, b.ay, 5, ink, 0.2) + ln(b.hx, b.hy, b.tx, b.ty, 4, ink, 0.2) +
       top +
       ln(cx, 0, a.kx, a.ky, 6, ink) + ln(a.kx, a.ky, a.ax, a.ay, 6, ink) + ln(a.hx, a.hy, a.tx, a.ty, 5, ink) +
       dot(cx, 0, "H", 7) + dot(a.kx, a.ky, "K", 7) + dot(a.ax, a.ay, "A", 6) +
@@ -49,7 +54,8 @@
       `<text x="190" y="20" text-anchor="middle" font-size="15" font-weight="700" fill="#5e6f6b">${o.titles.b}</text>
        <text x="490" y="20" text-anchor="middle" font-size="15" font-weight="700" fill="#0f6e56">${o.titles.a}</text>
        <line x1="80" y1="285" x2="300" y2="285" stroke="#d3dcda" stroke-width="2"/><line x1="380" y1="285" x2="600" y2="285" stroke="#d3dcda" stroke-width="2"/>` +
-      figure(o.curvesB, 190, {}, o.frame, o.trunkMode, o.topLabel) + figure(o.curvesA, 490, o.colors, o.frame, o.trunkMode, o.topLabel) +
+      figure(o.curvesB, 190, o.colorsB || {}, o.frame, o.trunkMode, o.topLabel, o.cloudB, "#5e6f6b") +
+      figure(o.curvesA, 490, o.colors, o.frame, o.trunkMode, o.topLabel, o.cloudA, "#1d9e75") +
       `<text x="340" y="310" text-anchor="middle" font-size="13" fill="#5e6f6b">${o.step}</text>`;
   }
 

@@ -20,6 +20,8 @@
 |---|---|---|
 | **MediaPipe Pose Landmarker** (Google), `@mediapipe/tasks-vision@0.10.21`, модель `pose_landmarker_full` | поиск суставов на кадрах видео прямо в браузере | нет, готовая предобученная модель |
 | **scikit-learn** (StandardScaler → PCA(15) → Ridge) | наша модель оценки отклонений GVS/GPS по 204 углам шага; модель без таза для видео | да, `model/train.py` |
+| **SciPy** (`least_squares`) | восстановление нормативных кривых по GVS лаборатории | да, `model/fit_norm.py` |
+| **scikit-learn** (StandardScaler → PCA(8) → RidgeCV) | модель компенсации для «Цифрового двойника» | да, `model/fit_coupling.py` |
 | **pandas, NumPy** | чтение CSV, подготовка данных | — |
 | **Claude, Claude Code** (Anthropic) | помощь в анализе данных, написании кода, тестов и текстов | — |
 

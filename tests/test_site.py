@@ -24,7 +24,10 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
 Handler = functools.partial(Quiet, directory=ROOT)
-srv = socketserver.TCPServer(("127.0.0.1", 0), Handler)
+class Srv(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    request_queue_size = 64   # сайт грузит много файлов сразу
+srv = Srv(("127.0.0.1", 0), Handler)
 PORT = srv.server_address[1]
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 URL = f"http://127.0.0.1:{PORT}/index.html"
@@ -151,7 +154,39 @@ with sync_playwright() as pw:
     page.fill("#thHip", "4")
     check("пороги меняют результаты", "18 / 29" not in page.inner_text("#cohortTbl"))
     page.click("#btnThReset")
+    check("норма: таблица 4 сустава + проверка здравого смысла", page.locator("#normTbl tr").count() == 5 and "60.5" in page.inner_text("#normCheck"))
+    check("компенсация: таблица таз/колено/стопа", page.locator("#compTbl tr").count() == 4 and "3.01" in page.inner_text("#compTbl"))
+    check("вариабельность: таз (голос) 20/29, стопа (голос) 21/29", "20 / 29" in page.inner_text("#varTbl") and "21 / 29" in page.inner_text("#varTbl"))
     page.screenshot(path=os.path.join(SHOTS, "03_model.png"), full_page=True)
+
+    print("\n8б. Цифровой двойник")
+    page.click('a[data-view="patients"]'); page.click('#plist [data-pid="demo:s61520_16"]')
+    check("стабильность шагов на экране результата", "нестабильнее" in page.inner_text("#varBox") or "стабильн" in page.inner_text("#varBox"), page.inner_text("#varBox")[-120:])
+    page.click('#sessions [data-sid="__twin"]')
+    check("вкладка «Цифровой двойник» открыта", page.is_visible("#twin") and not page.is_visible("#result"))
+    nums = lambda: [r.locator("td").all_inner_texts() for r in page.locator("#twNums tr").all()[1:]]
+    check("было = стало при нулевых ползунках", all(r[1] == r[2] for r in nums()), nums()[0])
+    slide = lambda sid, v: page.evaluate("([id, v]) => { const e = document.querySelector(`[data-sl='${id}']`); e.value = v; e.dispatchEvent(new Event('input', {bubbles: true})); }", [sid, v])
+    slide("hipExt", 10)
+    n = nums()
+    check("точный режим: бедро +10 меняет только бедро", n[1][1] != n[1][2] and n[0][1] == n[0][2] and n[2][1] == n[2][2] and n[3][1] == n[3][2], [r[:3] for r in n])
+    check("4 графика с нормой", page.locator("#twCharts svg").count() == 4)
+    page.click('#twMode label:has(input[value="comp"])')
+    n2 = nums()
+    check("режим компенсации: меняются и таз/колено/стопа", n2[0][2] != n[0][2] and n2[2][2] != n[2][2], [r[:3] for r in n2])
+    check("подпись «точность умеренная»", "умеренная" in page.inner_text("#twModeNote") and "пунктир" in page.inner_text("#twModeNote"))
+    check("пунктир на графиках компенсации", page.locator("#twCharts path[stroke-dasharray]").count() == 3)
+    check("облако шагов нарисовано", page.locator("#twAnim polyline").count() >= 20)
+    check("«что даст больше пользы»: топ-3", page.locator("#twTop li").count() == 3, page.inner_text("#twTop")[:100])
+    page.locator("#twTop [data-apply]").first.click()
+    check("кнопка «Показать» ставит ползунок", page.input_value("#twSliders input >> nth=0") != "0" or any(page.input_value(f"#twSliders input >> nth={i}") != "0" for i in range(5)))
+    page.click("#twSave")
+    check("цель терапии сохранена", "показатель" in page.inner_text("#twGoals"), page.inner_text("#twSaveMsg"))
+    page.click('#sessions [data-sid="Verbal"]')
+    check("цель видна в истории пациента", "Цель терапии" in page.inner_text("#history"))
+    page.click('#myList [data-pid="my:T-001"]'); page.click('#sessions [data-sid="__twin"]')
+    check("двойник работает на своей записи (выбор основы)", page.locator("#twBase option").count() == 6 and page.locator("#twNums tr").count() == 6)
+    page.screenshot(path=os.path.join(SHOTS, "07_twin.png"), full_page=True)
 
     print("\n9. Казахский язык: нет непереведённых ключей")
     ru = set(page.evaluate("Object.keys(I18N.ru)")); kk = set(page.evaluate("Object.keys(I18N.kk)"))
@@ -171,6 +206,9 @@ with sync_playwright() as pw:
     page.wait_for_function("document.querySelector('#errRun').textContent.length > 0")
     check("ошибка на казахском", "зертхана файлы емес" in page.inner_text("#errRun"), page.inner_text("#errRun"))
     page.click("#btnWzCancel")
+    page.click('#sessions [data-sid="__twin"]')
+    page.click('#twMode label:has(input[value="comp"])')
+    check("цифровой двойник", not raw_keys(page), raw_keys(page))
     page.click("#btnCard")
     check("карточка пациента", not raw_keys(page), raw_keys(page))
     page.screenshot(path=os.path.join(SHOTS, "04_kk_card.png"), full_page=True)
@@ -190,6 +228,10 @@ with sync_playwright() as pw:
     check("мастер: выбор источника нажатием на карточку", mp.is_checked('input[name="src"][value="video"]'))
     check("мастер: нет горизонтальной прокрутки", sw() <= 390, sw())
     mp.screenshot(path=os.path.join(SHOTS, "06_mobile_wizard.png"), full_page=True)
+    mp.goto(URL); mp.wait_for_selector("#plist li"); mp.click('#plist [data-pid="demo:s61520_16"]')
+    mp.click('#sessions [data-sid="__twin"]')
+    check("двойник: нет горизонтальной прокрутки", sw() <= 390, sw())
+    mp.screenshot(path=os.path.join(SHOTS, "08_mobile_twin.png"), full_page=True)
     mp.goto(URL + "#model"); mp.wait_for_selector("#valTbl tr")
     check("модель ИИ: нет горизонтальной прокрутки", sw() <= 390, sw())
     m.close()

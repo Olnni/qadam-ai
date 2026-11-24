@@ -1,0 +1,44 @@
+{
+  "metrics": {
+    "P": {
+      "mae": 1.045,
+      "r": 0.9839,
+      "steps": 2606,
+      "min": 7.7,
+      "max": 12.9,
+      "argmin_pct": 68,
+      "argmax_pct": 24
+    },
+    "H": {
+      "mae": 0.543,
+      "r": 0.9939,
+      "steps": 2606,
+      "min": -2.7,
+      "max": 32.9,
+      "argmin_pct": 54,
+      "argmax_pct": 88
+    },
+    "K": {
+      "mae": 0.29,
+      "r": 0.9977,
+      "steps": 2606,
+      "min": 6.7,
+      "max": 60.5,
+      "argmin_pct": 100,
+      "argmax_pct": 74
+    },
+    "A": {
+      "mae": 0.236,
+      "r": 0.9977,
+      "steps": 2606,
+      "min": -4.8,
+      "max": 16.6,
+      "argmin_pct": 68,
+      "argmax_pct": 50
+    }
+  },
+  "checks": {
+    "knee_swing_peak": 60.5,
+    "hip_min_late_stance": -2.7
+  }
+}

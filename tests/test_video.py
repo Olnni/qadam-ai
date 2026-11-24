@@ -26,7 +26,10 @@ SHOT = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--shot=")), "
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
-srv = socketserver.TCPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=ROOT))
+class Srv(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    request_queue_size = 64   # сайт грузит много файлов сразу
+srv = Srv(("127.0.0.1", 0), functools.partial(Quiet, directory=ROOT))
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 URL = f"http://127.0.0.1:{srv.server_address[1]}/index.html"
 
@@ -76,7 +79,8 @@ with sync_playwright() as pw:
     loaded = "MediaPipe" in log and ("готово" in log)
     print("\nMediaPipe загрузился:", "да" if loaded else "НЕТ")
     if err: print("Сообщение для пользователя:", err)
-    if page.is_visible("#result"):
+    res_ok = page.is_visible("#result")
+    if res_ok:
         page.wait_for_timeout(1500)
         page.screenshot(path=os.path.join(OUT, SHOT), full_page=True)
         print("Светофор:", page.inner_text("#light"))
@@ -87,8 +91,18 @@ with sync_playwright() as pw:
         print("\nВыводы ИИ:")
         for li in page.locator("#finds li").all_inner_texts(): print("   •", li.replace("\n", " "))
         print("\nСкриншот: tests/screens/" + SHOT)
+        # Цифровой двойник на записи с видео: таза нет → предупреждение, компенсация выключена
+        page.click('#sessions [data-sid="__twin"]')
+        warn = page.is_visible("#twWarn"); comp_off = page.is_disabled('input[name="twm"][value="comp"]')
+        page.evaluate("() => { const e = document.querySelector(\"[data-sl='kneeSwing']\"); e.value = 10; e.dispatchEvent(new Event('input', {bubbles: true})); }")
+        rows = [r.locator("td").all_inner_texts() for r in page.locator("#twNums tr").all()[1:]]
+        print("\nЦифровой двойник на видео:", "предупреждение показано" if warn else "НЕТ предупреждения",
+              "| компенсация выключена" if comp_off else "| компенсация НЕ выключена")
+        for r in rows: print("   ", " | ".join(r))
+        twin_ok = warn and comp_off and "не измерено" in rows[0][1]
     print("Ошибки JavaScript:", errors or "нет")
-    ok = loaded and not errors and (bool(err) or page.is_visible("#result"))
+    twin_ok = locals().get("twin_ok", True)
+    ok = loaded and not errors and twin_ok and (bool(err) or res_ok)
     print("\nИТОГ:", "ПРОГРАММА ОТРАБОТАЛА КОРРЕКТНО" if ok else "ЕСТЬ ПРОБЛЕМЫ")
     br.close()
 srv.shutdown()

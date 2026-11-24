@@ -236,3 +236,28 @@ label.file input { max-width: 100%; }
   h1 { font-size: 22px; }
   .card { padding: 16px; }
 }
+
+/* ===== Цифровой двойник ===== */
+.twin-seg { border-color: var(--brand-2); color: var(--brand); }
+.twin-seg.on { background: var(--brand-2); border-color: var(--brand-2); color: #fff; }
+.twin-grid { grid-template-columns: 3fr 2fr; margin-bottom: 8px; }
+#twAnim { width: 100%; height: auto; display: block; }
+.twmode { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.twmode label { flex-direction: row; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; }
+.slider { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--ink); }
+.slider span { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; }
+.slider small { flex-basis: 100%; color: var(--muted); font-size: 12px; }
+.slider output { font-weight: 700; color: var(--brand); min-width: 44px; }
+.slider input[type=range] { width: 100%; accent-color: var(--brand-2); }
+.slider.off { opacity: .45; }
+.subcard { background: var(--bg); border-radius: 12px; padding: 14px 16px; }
+.subcard .tbl td, .subcard .tbl th { background: transparent; }
+.tops { padding-left: 20px; margin: 0; }
+.tops li { margin-bottom: 8px; }
+.btn.mini { padding: 3px 9px; font-size: 12px; margin-left: 6px; }
+.warnline { background: var(--warn-bg); color: #6b4308; border-radius: 10px; padding: 8px 12px; }
+.varmsg { margin: 8px 0 4px; font-weight: 600; }
+.varmsg.warn { color: #6b4308; }
+.lg.norm { color: #3b8a1e; opacity: .5; font-weight: 700; }
+.charts .full-row { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 1100px) { .twin-grid { grid-template-columns: 1fr; } }

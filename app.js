@@ -8,21 +8,23 @@ const PATIENTS = DATA.patients;
 const DEMO_IDS = Object.keys(PATIENTS);
 const { JOINTS, TARGETS, METRICS } = QModel;
 const CONDS = ["Verbal", "VR"];
+const NORM = window.QADAM_NORM, COUPLING = window.QADAM_COUPLING;  // восстановленная норма и модель компенсации
 
 const state = {
   lang: "ru", pid: "demo:s61520_16", sid: "Verbal", mode: "result",
   editing: null, frame: 0, playing: true, an: null, ev: null, sess: null,
   progMetric: "GPS_a", live: {}, running: false, mdPatient: "s61520_16",
+  twin: { params: {}, mode: "exact", base: null, sug: null, sugKey: null, last: null },
 };
 
 /* ================= Хранилище (только этот браузер) ================= */
 const STORE_KEY = "qadam_store_v2";
-let store = { patients: {}, sessions: {}, demoNotes: {}, th: null };
+let store = { patients: {}, sessions: {}, demoNotes: {}, demoGoals: {}, th: null };
 let storageOk = true;
 function loadStore() {
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-    if (s && typeof s === "object") store = Object.assign({ patients: {}, sessions: {}, demoNotes: {}, th: null }, s);
+    if (s && typeof s === "object") store = Object.assign({ patients: {}, sessions: {}, demoNotes: {}, demoGoals: {}, th: null }, s);
   } catch (e) { storageOk = false; }
 }
 function saveStore() {
@@ -147,10 +149,13 @@ function render() {
     const label = demo ? t("sess_" + s.id) : `${fdate(s.date)} · ${t("cond_" + s.hint)}`;
     const on = sess && s.id === sess.id && state.mode === "result";
     return `<button class="seg ${on ? "on" : ""}" data-sid="${esc(s.id)}"><i class="sd ${evalOf(pid, s).light}"></i>${esc(label)}</button>`;
-  }).join("") + (demo ? `<span class="small muted demo-note">${t("demo_note")}</span>` : "");
+  }).join("") + (list.length ? `<button class="seg twin-seg ${state.mode === "twin" ? "on" : ""}" data-sid="__twin">${t("tw_tab")}</button>` : "") +
+    (demo ? `<span class="small muted demo-note">${t("demo_note")}</span>` : "");
   // Панели
   $("cardPanel").classList.toggle("hidden", state.mode !== "card");
   $("wizard").classList.toggle("hidden", state.mode !== "wizard");
+  $("twin").classList.toggle("hidden", state.mode !== "twin");
+  if (state.mode === "twin") renderTwin();
   const showRes = state.mode === "result" && !!sess;
   $("result").classList.toggle("hidden", !showRes);
   $("empty").classList.toggle("hidden", !(state.mode === "result" && !sess));
@@ -177,6 +182,7 @@ function renderResult(pid, sess, an, ev) {
   renderSource(sess, an);
   renderFinds(pid, sess, an, ev);
   renderTable(an, ev);
+  renderVar(pid, sess, an);
   renderCharts(an, ev);
   renderParent(sess, an, ev);
   renderHistory(pid);
@@ -377,13 +383,17 @@ function drawAnim() {
     titles: { b: t("cond_Baseline"), a: t("cond_" + an.hint) }, step: t("step_pct", { p: state.frame * 2 }),
   });
 }
-function updatePlay() { $("btnPlay").textContent = state.playing ? "❚❚ " + t("btn_pause") : "▶ " + t("btn_play"); }
+function updatePlay() {
+  const txt = state.playing ? "❚❚ " + t("btn_pause") : "▶ " + t("btn_play");
+  $("btnPlay").textContent = txt; $("twPlay").textContent = txt;
+}
 let tick = 0;
 setInterval(() => {
   const sp = parseInt($("speed").value, 10) || 2;
-  if (!state.playing || !state.an || ++tick % (5 - sp)) return;
+  const twin = state.mode === "twin" && state.twin.last;
+  if (!state.playing || (!state.an && !twin) || ++tick % (5 - sp)) return;
   state.frame = (state.frame + 1) % 51;
-  drawAnim();
+  if (twin) drawTwin(); else drawAnim();
 }, 22);
 
 /* ================= Решение врача и история ================= */
@@ -400,6 +410,7 @@ function renderHistory(pid) {
     rows.push(`<li><i class="sd ${ev.light}"></i><b>${esc(label)}</b>${decs.length ? "" : ` — <span class="muted">${t("no_decision")}</span>`}
       ${decs.map((d) => `<div class="dec">${esc(fdate(d.time))} · ${esc(t(d.dec))}${d.note ? " — " + esc(d.note) : ""}</div>`).join("")}</li>`);
   });
+  goalsOf(pid).forEach((g) => rows.push(`<li><b>🎯 ${esc(fdate(g.time))} · ${t("tw_goal")}</b><div class="dec">${esc(goalText(g))}</div></li>`));
   $("history").innerHTML = rows.join("") || `<li>${t("history_empty")}</li>`;
 }
 function saveDecision() {
@@ -429,6 +440,7 @@ function downloadHistory() {
     lines.push(`${isDemo(pid) ? t("sess_" + s.id) : fdate(s.date) + " · " + t("cond_" + s.hint) + (s.hintText ? " «" + s.hintText + "»" : "")} | ${t("light_" + ev.light)} | GPS ${fmt(ev.res.GPS_a.b[0])} → ${fmt(ev.res.GPS_a.a[0])}`);
     decisionsOf(pid, s).forEach((d) => lines.push(`   ${fdate(d.time)} | ${t(d.dec)} | ${d.note || ""}`));
   });
+  goalsOf(pid).forEach((g) => lines.push(`${t("tw_goal")} ${fdate(g.time)} | ${goalText(g)}`));
   downloadText(`qadam-${codeOf(pid)}.txt`, lines.join("\n"));
 }
 
@@ -541,7 +553,7 @@ function deleteCard() {
   renderLists(); render();
 }
 function exportJSON() {
-  const data = { app: "qadam-ai", version: 2, exported: new Date().toISOString(), patients: store.patients, sessions: store.sessions, demoNotes: store.demoNotes };
+  const data = { app: "qadam-ai", version: 2, exported: new Date().toISOString(), patients: store.patients, sessions: store.sessions, demoNotes: store.demoNotes, demoGoals: store.demoGoals };
   downloadText(`qadam-patients-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), "application/json");
   $("ioMsg").textContent = t("exported", { n: Object.keys(store.patients).length });
 }
@@ -566,6 +578,7 @@ async function importJSON(file) {
       store.sessions[code] = have; np++;
     }
     if (d.demoNotes && typeof d.demoNotes === "object") Object.assign(store.demoNotes, d.demoNotes);
+    if (d.demoGoals && typeof d.demoGoals === "object") Object.assign(store.demoGoals, d.demoGoals);
     saveStore(); cache.clear();
     msg.textContent = t("imported", { np, ns });
     renderLists();
@@ -763,6 +776,7 @@ function renderModel() {
   const row = (k, f) => `<tr><td>${t(k)}</td><td>${cnt.Verbal[f]} / ${DEMO_IDS.length}</td><td>${cnt.VR[f]} / ${DEMO_IDS.length}</td></tr>`;
   $("cohortTbl").innerHTML = `<tr><th></th><th>${t("cond_Verbal")}</th><th>${t("cond_VR")}</th></tr>` +
     row("c_hip", "hip") + row("c_yellow", "yellow") + row("c_green", "green") + row("c_red", "red");
+  renderTwinModel();
 }
 
 // Живая проверка разбиения на шаги: склеиваем настоящие шаги пациента в непрерывный
@@ -809,6 +823,188 @@ function segCheck() {
   $("segOut").innerHTML = out.join("");
 }
 
+/* ================= Стабильность шагов (вариабельность) ================= */
+// Шаги «до» и «после» для любого сеанса
+function stepsOf(pid, s) {
+  if (isDemo(pid)) { const p = PATIENTS[codeOf(pid)]; return { b: p.rec.Baseline, a: p.rec[s.id], pelvis: true }; }
+  return { b: s.before.steps, a: s.after.steps, pelvis: !!(s.before.pelvis && s.after.pelvis) };
+}
+function renderVar(pid, sess, an) {
+  const st = stepsOf(pid, sess);
+  const vb = QTwin.variability(st.b), va = QTwin.variability(st.a);
+  const joints = st.pelvis ? JOINTS : ["H", "K", "A"];
+  const up = [], down = [];
+  let h = `<tr><th>${t("var_joint")}</th><th>${t("before")}, °</th><th>${t("after")}, °</th><th>${t("th_change")}</th></tr>`;
+  joints.forEach((j) => {
+    const ch = (va[j] / vb[j] - 1) * 100;
+    if (ch >= 30) up.push(t("jn_" + j)); if (ch <= -30) down.push(t("jn_" + j));
+    h += `<tr><td>${cap(t("jn_" + j))}</td><td>${fmt(vb[j])}</td><td>${fmt(va[j])}</td><td class="${ch >= 30 ? "up" : ch <= -30 ? "down" : "same"}">${sign(ch).replace(/(\.\d)$/, "$1")}%</td></tr>`;
+  });
+  const msg = up.length >= 2 ? t("var_less", { joints: up.join(", ") }) : down.length >= 2 ? t("var_more", { joints: down.join(", ") }) : t("var_same");
+  $("varBox").innerHTML = `<div class="scroll"><table class="tbl">${h}</table></div><p class="varmsg ${up.length >= 2 ? "warn" : ""}">${msg}</p><p class="small muted">${t("var_note")}</p>`;
+}
+
+/* ================= Цифровой двойник походки ================= */
+function twinBaseOptions(pid) {
+  if (isDemo(pid)) return ["Baseline", "Verbal", "VR"].map((c) => ({ v: c, label: t("cond_" + c) }));
+  const opts = [];
+  sessionsOf(pid).forEach((s) => {
+    opts.push({ v: s.id + "|before", label: `${fdate(s.date)} · ${t("before")}` });
+    opts.push({ v: s.id + "|after", label: `${fdate(s.date)} · ${t("after")} (${t("cond_short_" + s.hint)})` });
+  });
+  return opts;
+}
+function twinBase(pid) {
+  const v = state.twin.base;
+  if (isDemo(pid)) return { steps: PATIENTS[codeOf(pid)].rec[v], pelvis: true, trunk: null, source: "demo" };
+  const [sid, w] = v.split("|");
+  const s = sessionsOf(pid).find((x) => x.id === sid);
+  const r = s[w];
+  return { steps: r.steps, pelvis: !!r.pelvis, trunk: r.trunk || null, source: s.source };
+}
+function renderTwin() {
+  const pid = state.pid;
+  const opts = twinBaseOptions(pid);
+  if (!opts.length) return;
+  if (!opts.some((o) => o.v === state.twin.base)) { state.twin.base = opts[0].v; state.twin.params = {}; }
+  if (state.twin.pid !== pid) { state.twin.pid = pid; $("twSaveMsg").textContent = ""; }
+  $("twBase").innerHTML = opts.map((o) => `<option value="${esc(o.v)}">${esc(o.label)}</option>`).join("");
+  $("twBase").value = state.twin.base;
+  const B = twinBase(pid);
+  if (!B.pelvis && state.twin.mode === "comp") state.twin.mode = "exact";
+  document.querySelectorAll('input[name="twm"]').forEach((r) => { r.checked = r.value === state.twin.mode; r.disabled = r.value === "comp" && !B.pelvis; });
+  $("twWarn").classList.toggle("hidden", B.source !== "video");
+  $("twWarn").textContent = t("tw_warn_video");
+  $("twSliders").innerHTML = QTwin.SLIDERS.map((sl) => {
+    const off = sl.j === "P" && !B.pelvis;
+    const v = state.twin.params[sl.id] || 0;
+    return `<label class="slider ${off ? "off" : ""}"><span><b>${t("sl_" + sl.id)}</b> <output id="out_${sl.id}">${v > 0 ? "+" : ""}${v}°</output><small>${t("slh_" + sl.id)}</small></span>
+      <input type="range" data-sl="${sl.id}" min="${sl.min}" max="${sl.max}" step="1" value="${v}" ${off ? "disabled" : ""}></label>`;
+  }).join("");
+  twinUpdate();
+}
+function twinUpdate() {
+  const pid = state.pid, B = twinBase(pid), pel = B.pelvis;
+  const comp = state.twin.mode === "comp" && pel;
+  const tw = QTwin.makeTwin(B.steps, state.twin.params, { compensate: comp, coupling: COUPLING });
+  const sNow = QTwin.score(B.steps, NORM.norm, pel), sTw = QTwin.score(tw.steps, NORM.norm, pel);
+  QTwin.SLIDERS.forEach((sl) => { const v = state.twin.params[sl.id] || 0; const o = $("out_" + sl.id); if (o) o.textContent = (v > 0 ? "+" : "") + v + "°"; });
+  const m = COUPLING.metrics;
+  $("twModeNote").textContent = !pel ? t("tw_comp_nop") : comp
+    ? t("tw_comp_note", { lo: Math.round(Math.min(m.P.betterShare, m.K.betterShare, m.A.betterShare) * 100), hi: Math.round(Math.max(m.P.betterShare, m.K.betterShare, m.A.betterShare) * 100) })
+    : t("tw_exact_note");
+  // Таблица «было → стало»
+  const row = (label, a, b, measured) => {
+    if (!measured) return `<tr><td>${label}</td><td colspan="3" class="muted">${t("not_measured")}</td></tr>`;
+    const d = b - a, cls = d < -0.05 ? "down" : d > 0.05 ? "up" : "same";
+    return `<tr><td>${label}</td><td>${fmt(a, 2)}</td><td>${fmt(b, 2)}</td><td class="${cls}">${d > 0 ? "+" : ""}${fmt(d, 2)}${cls === "down" ? " · " + t("w_better") : cls === "up" ? " · " + t("w_worse") : ""}</td></tr>`;
+  };
+  $("twNums").innerHTML = `<tr><th>${t("tw_dev")}</th><th>${t("tw_now")}</th><th>${t("tw_twin")}</th><th>${t("th_change")}</th></tr>` +
+    JOINTS.map((j) => row(cap(t("jn_" + j)), sNow.gvs[j], sTw.gvs[j], j !== "P" || pel)).join("") +
+    row(`<b>${t(pel ? "tw_index" : "tw_index3")}</b>`, sNow.index, sTw.index, true);
+  // Для анимации и графиков
+  const mNow = QModel.meanVec(B.steps), mTw = QModel.meanVec(tw.steps);
+  const colors = {};
+  JOINTS.forEach((j) => { const d = sTw.gvs[j] - sNow.gvs[j]; if (d <= -0.5) colors[j] = "#3b8a1e"; if (d >= 0.5) colors[j] = "#d23b3a"; });
+  state.twin.last = { now: QModel.curvesOf(mNow), tw: QModel.curvesOf(mTw), cloud: B.steps.slice(0, 40).map((x) => QModel.curvesOf(x)),
+    cloudTw: tw.steps.slice(0, 40).map((x) => QModel.curvesOf(x)), colors, pel, trunk: B.trunk, comp: !!tw.comp, sNow, sTw, B };
+  drawTwin();
+  // Графики: норма (зелёная полоса), сейчас, двойник (пунктир — прогноз компенсации ИИ)
+  $("twCharts").innerHTML = JOINTS.map((j) => {
+    if (j === "P" && !pel) return `<div class="chart"><h4>${t("j_P")}</h4><p class="small muted nodata">${t("not_measured")}</p></div>`;
+    const dashed = !!tw.comp && j !== "H";
+    return `<div class="chart"><h4>${t("j_" + j)}</h4>${normChart(NORM.norm[j], state.twin.last.now[j], state.twin.last.tw[j], dashed)}</div>`;
+  }).join("");
+  $("twChartsNote").innerHTML = `<span class="lg norm">━</span> ${t("tw_lg_norm")} &nbsp; <span style="color:#9aa6a3">━</span> ${t("tw_now")} &nbsp; <span style="color:#0f6e56">━</span> ${t("tw_twin")}` + (tw.comp ? ` &nbsp; <span style="color:#0f6e56">┅</span> ${t("tw_lg_comp")}` : "");
+  // «Что даст больше пользы» (считаем один раз на основу)
+  const key = pid + "|" + state.twin.base;
+  if (state.twin.sugKey !== key) { state.twin.sug = QTwin.suggest(B.steps, NORM.norm, pel); state.twin.sugKey = key; }
+  $("twTop").innerHTML = state.twin.sug.length ? state.twin.sug.map((r) => `<li><b>${t("sl_" + r.id)} ${r.value > 0 ? "+" : ""}${r.value}°</b><br><span class="small">${t(pel ? "tw_index" : "tw_index3")}: ${fmt(r.before, 2)} → ${fmt(r.after, 2)} (<span class="down">${fmt(r.change, 2)}</span>)</span> <button class="btn mini" data-apply="${r.id}" data-v="${r.value}">${t("tw_apply")}</button></li>`).join("") : `<li>${t("tw_top_none")}</li>`;
+  // Стабильность основы
+  const vv = QTwin.variability(B.steps);
+  $("twVar").innerHTML = `<table class="tbl">${(pel ? JOINTS : ["H", "K", "A"]).map((j) => `<tr><td>${cap(t("jn_" + j))}</td><td>${fmt(vv[j])}°</td></tr>`).join("")}</table><p class="small muted">${t("tw_var_note", { n: B.steps.length })}</p>`;
+  renderGoals(pid);
+}
+function drawTwin() {
+  const L = state.twin.last;
+  if (!L) return;
+  let now = L.now, tw = L.tw, mode = "pelvis", top = t("anim_trunk_no");
+  if (!L.pel) {
+    if (L.trunk) { now = Object.assign({}, now, { P: L.trunk }); tw = Object.assign({}, tw, { P: L.trunk }); mode = "video"; top = t("anim_trunk_video"); }
+    else mode = "none";
+  }
+  QAnim.draw($("twAnim"), {
+    curvesB: now, curvesA: tw, colors: L.colors, frame: state.frame, trunkMode: mode, topLabel: top,
+    cloudB: L.pel ? L.cloud : L.cloud.map((c) => Object.assign({}, c, { P: L.trunk || c.P })),
+    titles: { b: t("tw_now"), a: t("tw_twin") + (L.comp ? " *" : "") }, step: t("step_pct", { p: state.frame * 2 }) + (L.comp ? " · * " + t("tw_lg_comp") : ""),
+  });
+}
+// График сустава: норма — широкая зелёная полоса, «сейчас» — серая, двойник — тёмно-зелёная
+function normChart(norm, now, tw, dashed) {
+  const W = 260, H = 150, L = 34, B = 22, T = 8, R = 8;
+  const all = norm.concat(now, tw || []);
+  let lo = Math.floor(Math.min(...all) / 5) * 5, hi = Math.ceil(Math.max(...all) / 5) * 5;
+  if (hi === lo) hi = lo + 5;
+  const x = (i) => L + (i / 50) * (W - L - R), y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const path = (arr) => arr.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${W} ${H}">
+    <line x1="${L}" y1="${y(lo)}" x2="${W - R}" y2="${y(lo)}" stroke="#e1e8e6"/>
+    <text x="${L - 4}" y="${y(hi) + 4}" font-size="10" text-anchor="end" fill="#5e6f6b">${hi}</text>
+    <text x="${L - 4}" y="${y(lo) + 4}" font-size="10" text-anchor="end" fill="#5e6f6b">${lo}</text>
+    <text x="${L}" y="${H - 6}" font-size="10" fill="#5e6f6b">0%</text>
+    <text x="${W - R}" y="${H - 6}" font-size="10" text-anchor="end" fill="#5e6f6b">100%</text>
+    <path d="${path(norm)}" fill="none" stroke="#3b8a1e" stroke-width="9" stroke-linecap="round" opacity=".22"/>
+    <path d="${path(now)}" fill="none" stroke="#9aa6a3" stroke-width="2"/>
+    ${tw ? `<path d="${path(tw)}" fill="none" stroke="#0f6e56" stroke-width="2.5" ${dashed ? 'stroke-dasharray="5 4"' : ""}/>` : ""}</svg>`;
+}
+// Цели терапии
+function goalsOf(pid) { return (isDemo(pid) ? store.demoGoals[codeOf(pid)] : (store.patients[codeOf(pid)] || {}).goals) || []; }
+function goalText(g) {
+  const ps = Object.entries(g.params).filter(([, v]) => v).map(([k, v]) => `${t("sl_" + k)} ${v > 0 ? "+" : ""}${v}°`).join("; ") || t("tw_no_change");
+  return t("tw_goal_line", { params: ps, mode: t(g.mode === "comp" ? "tw_mode_comp" : "tw_mode_exact"), a: fmt(g.indexNow, 2), b: fmt(g.indexTwin, 2), base: g.base });
+}
+function renderGoals(pid) {
+  const gs = goalsOf(pid);
+  $("twGoals").innerHTML = gs.length ? gs.slice().reverse().map((g) => `<li><b>${esc(fdate(g.time))}</b><div class="dec">${esc(goalText(g))}</div></li>`).join("") : `<li class="muted">${t("tw_no_goals")}</li>`;
+}
+function saveGoal() {
+  const L = state.twin.last, pid = state.pid;
+  if (!L) return;
+  const params = {};
+  QTwin.SLIDERS.forEach((sl) => { if (state.twin.params[sl.id]) params[sl.id] = state.twin.params[sl.id]; });
+  const r2 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Number.isFinite(v) ? Math.round(v * 100) / 100 : null]));
+  const g = { time: new Date().toISOString(), base: $("twBase").selectedOptions[0].textContent, mode: L.comp ? "comp" : "exact", params,
+    gvsNow: r2(L.sNow.gvs), gvsTwin: r2(L.sTw.gvs), indexNow: L.sNow.index, indexTwin: L.sTw.index };
+  if (isDemo(pid)) (store.demoGoals[codeOf(pid)] = store.demoGoals[codeOf(pid)] || []).push(g);
+  else (store.patients[codeOf(pid)].goals = store.patients[codeOf(pid)].goals || []).push(g);
+  $("twSaveMsg").textContent = saveStore() ? t("tw_saved") : t("storage_off");
+  renderGoals(pid);
+}
+
+/* ================= «Модель ИИ»: норма, компенсация, вариабельность ================= */
+function renderTwinModel() {
+  // средняя ходьба без подсказки всех 29 детей — для сравнения с нормой
+  const allB = [].concat(...DEMO_IDS.map((id) => PATIENTS[id].rec.Baseline));
+  const mean = QModel.curvesOf(QModel.meanVec(allB));
+  $("normCharts").innerHTML = JOINTS.map((j) => `<div class="chart"><h4>${t("j_" + j)}</h4>${normChart(NORM.norm[j], mean[j], null, false)}</div>`).join("") +
+    `<p class="small muted full-row"><span class="lg norm">━</span> ${t("tw_lg_norm")} &nbsp; <span style="color:#9aa6a3">━</span> ${t("md_norm_mean")}</p>`;
+  const nm = NORM.metrics;
+  $("normTbl").innerHTML = `<tr><th>${t("var_joint")}</th><th>${t("th_gvs_err")}</th><th>${t("th_r")}</th><th>${t("th_range")}</th></tr>` +
+    JOINTS.map((j) => `<tr><td>${cap(t("jn_" + j))}</td><td>${nm[j].mae.toFixed(2)}</td><td>${nm[j].r.toFixed(3)}</td><td>${nm[j].min}° … ${nm[j].max}°</td></tr>`).join("");
+  $("normCheck").textContent = t("norm_check", { k: NORM.checks.knee_swing_peak, h: NORM.checks.hip_min_late_stance });
+  const cm = COUPLING.metrics;
+  $("compTbl").innerHTML = `<tr><th>${t("var_joint")}</th><th>${t("th_rmse_model")}</th><th>${t("th_rmse_zero")}</th><th>${t("th_better")}</th></tr>` +
+    ["P", "K", "A"].map((j) => `<tr><td>${cap(t("jn_" + j))}</td><td>${cm[j].rmse}°</td><td>${cm[j].rmseZero}°</td><td>${Math.round(cm[j].betterShare * 100)}% (${t("acc_mid")})</td></tr>`).join("");
+  // Вариабельность по всем детям (считается прямо здесь)
+  const cnt = { Verbal: { P: 0, H: 0, K: 0, A: 0 }, VR: { P: 0, H: 0, K: 0, A: 0 } };
+  DEMO_IDS.forEach((id) => {
+    const p = PATIENTS[id], vb = QTwin.variability(p.rec.Baseline);
+    CONDS.forEach((c) => { const va = QTwin.variability(p.rec[c]); JOINTS.forEach((j) => { if (va[j] / vb[j] - 1 >= 0.3) cnt[c][j]++; }); });
+  });
+  $("varTbl").innerHTML = `<tr><th>${t("var_joint")}</th><th>${t("cond_Verbal")}</th><th>${t("cond_VR")}</th></tr>` +
+    JOINTS.map((j) => `<tr><td>${cap(t("jn_" + j))}</td><td>${cnt.Verbal[j]} / ${DEMO_IDS.length}</td><td>${cnt.VR[j]} / ${DEMO_IDS.length}</td></tr>`).join("");
+}
+
 /* ================= Язык и навигация ================= */
 function applyLang() {
   document.documentElement.lang = state.lang;
@@ -849,7 +1045,8 @@ function selectPatient(pid) {
   $("sessions").addEventListener("click", (e) => {
     const b = e.target.closest("[data-sid]");
     if (!b) return;
-    state.sid = b.dataset.sid; state.mode = "result";
+    if (b.dataset.sid === "__twin") state.mode = "twin";
+    else { state.sid = b.dataset.sid; state.mode = "result"; }
     render();
   });
   $("progMetric").addEventListener("click", (e) => { const b = e.target.closest("[data-m]"); if (b) { state.progMetric = b.dataset.m; render(); } });
@@ -874,6 +1071,14 @@ function selectPatient(pid) {
   });
   $("mdPatient").addEventListener("change", (e) => { state.mdPatient = e.target.value; renderModel(); $("segOut").innerHTML = ""; });
   $("btnSegCheck").addEventListener("click", segCheck);
+  // Цифровой двойник
+  $("twBase").addEventListener("change", (e) => { state.twin.base = e.target.value; state.twin.params = {}; renderTwin(); });
+  $("twMode").addEventListener("change", (e) => { state.twin.mode = e.target.value; twinUpdate(); });
+  $("twSliders").addEventListener("input", (e) => { const id = e.target.dataset.sl; if (!id) return; state.twin.params[id] = parseInt(e.target.value, 10) || 0; twinUpdate(); });
+  $("twReset").addEventListener("click", () => { state.twin.params = {}; renderTwin(); });
+  $("twTop").addEventListener("click", (e) => { const b = e.target.closest("[data-apply]"); if (!b) return; state.twin.params = { [b.dataset.apply]: parseInt(b.dataset.v, 10) }; state.twin.mode = "exact"; renderTwin(); });
+  $("twSave").addEventListener("click", saveGoal);
+  $("twPlay").addEventListener("click", () => { state.playing = !state.playing; updatePlay(); });
   $("btnSave").addEventListener("click", saveDecision);
   $("btnDownload").addEventListener("click", downloadHistory);
   $("btnCopy").addEventListener("click", async () => {
